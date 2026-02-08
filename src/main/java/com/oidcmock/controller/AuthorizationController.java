@@ -59,6 +59,12 @@ public class AuthorizationController {
             return "redirect:" + errorRedirect(redirectUri, "unsupported_response_type", state);
         }
 
+        // Security: Validate client and redirect URI
+        if (!isValidRedirect(clientId, redirectUri)) {
+            model.addAttribute("error", "Invalid client_id or redirect_uri");
+            return "login";
+        }
+
         // Pass params to view
         model.addAttribute("clientId", clientId);
         model.addAttribute("redirectUri", redirectUri);
@@ -79,6 +85,12 @@ public class AuthorizationController {
             @RequestParam(value = "state", required = false) String state,
             @RequestParam(value = "nonce", required = false) String nonce,
             Model model) {
+
+        // Security: Validate client and redirect URI (Double check)
+        if (!isValidRedirect(clientId, redirectUri)) {
+            model.addAttribute("error", "Invalid client_id or redirect_uri");
+            return "login";
+        }
 
         Optional<User> user = userService.authenticate(username, password);
 
@@ -117,5 +129,11 @@ public class AuthorizationController {
                 .queryParamIfPresent("state", Optional.ofNullable(state))
                 .build()
                 .toUriString();
+    }
+
+    private boolean isValidRedirect(String clientId, String redirectUri) {
+        return properties.findClient(clientId)
+                .map(client -> client.redirectUris().contains(redirectUri))
+                .orElse(false);
     }
 }

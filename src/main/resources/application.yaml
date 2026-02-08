@@ -1,0 +1,45 @@
+# OIDC Mock Server Configuration
+server:
+  port: 8080
+
+oidc:
+  # Issuer URL - appears in tokens and discovery document
+  issuer: http://localhost:9090
+  
+  # Token lifetimes in seconds
+  access-token-expiry: 3600    # 1 hour
+  id-token-expiry: 3600        # 1 hour
+  refresh-token-expiry: 86400  # 24 hours
+  auth-code-expiry: 300        # 5 minutes
+  
+  # Default test users
+  users:
+    - username: testuser
+      password: password123
+      claims:
+        sub: "user-001"
+        email: "testuser@example.com"
+        email_verified: true
+        name: "Test User"
+        given_name: "Test"
+        family_name: "User"
+        roles:
+          - user
+          - admin
+    
+    - username: alice
+      password: alice123
+      claims:
+        sub: "user-002"
+        email: "alice@example.com"
+        email_verified: true
+        name: "Alice Smith"
+        given_name: "Alice"
+        family_name: "Smith"
+        roles:
+          - user
+
+# Logging
+logging:
+  level:
+    com.oidcmock: DEBUG

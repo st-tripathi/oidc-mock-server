@@ -1,0 +1,10 @@
+users:
+  - username: dev
+    password: dev
+    claims:
+      sub: "user-dev"
+      email: "dev@example.com"
+      name: "Dev User"
+      roles:
+        - developer
+        - admin

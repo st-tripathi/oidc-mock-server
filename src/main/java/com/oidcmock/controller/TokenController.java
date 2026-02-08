@@ -1,0 +1,168 @@
+package com.oidcmock.controller;
+
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.oidcmock.config.OidcProperties;
+import com.oidcmock.model.TokenResponse;
+import com.oidcmock.model.User;
+import com.oidcmock.service.AuthCodeService;
+import com.oidcmock.service.AuthCodeService.AuthCodeData;
+import com.oidcmock.service.TokenService;
+import com.oidcmock.service.UserService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
+import java.util.Optional;
+
+/**
+ * Controller for the OAuth2 Token endpoint.
+ * 
+ * <p>
+ * Implements token exchange as per RFC 6749 §3.2.
+ * </p>
+ * 
+ * <p>
+ * Supported grant types:
+ * </p>
+ * <ul>
+ * <li>{@code authorization_code} - Exchange auth code for tokens</li>
+ * <li>{@code password} - Direct username/password (for testing)</li>
+ * <li>{@code refresh_token} - Refresh access token</li>
+ * </ul>
+ * 
+ * @see <a href="https://tools.ietf.org/html/rfc6749#section-3.2">RFC 6749
+ *      §3.2</a>
+ */
+@RestController
+public class TokenController {
+
+    private static final Logger log = LoggerFactory.getLogger(TokenController.class);
+
+    private final TokenService tokenService;
+    private final UserService userService;
+    private final AuthCodeService authCodeService;
+    private final OidcProperties properties;
+
+    public TokenController(
+            TokenService tokenService,
+            UserService userService,
+            AuthCodeService authCodeService,
+            OidcProperties properties) {
+        this.tokenService = tokenService;
+        this.userService = userService;
+        this.authCodeService = authCodeService;
+        this.properties = properties;
+    }
+
+    /**
+     * Token endpoint - exchanges credentials for tokens.
+     */
+    @PostMapping(value = "/token", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> token(
+            @RequestParam("grant_type") String grantType,
+            @RequestParam(value = "code", required = false) String code,
+            @RequestParam(value = "redirect_uri", required = false) String redirectUri,
+            @RequestParam(value = "client_id", required = false) String clientId,
+            @RequestParam(value = "username", required = false) String username,
+            @RequestParam(value = "password", required = false) String password,
+            @RequestParam(value = "refresh_token", required = false) String refreshToken,
+            @RequestParam(value = "scope", required = false) String scope) {
+
+        log.debug("Token request: grant_type={}", grantType);
+
+        return switch (grantType) {
+            case "authorization_code" -> handleAuthorizationCode(code, redirectUri, clientId);
+            case "password" -> handlePasswordGrant(username, password, clientId, scope);
+            case "refresh_token" -> handleRefreshToken(refreshToken);
+            default -> errorResponse("unsupported_grant_type", "Grant type not supported: " + grantType);
+        };
+    }
+
+    private ResponseEntity<?> handleAuthorizationCode(String code, String redirectUri, String clientId) {
+        if (code == null || redirectUri == null || clientId == null) {
+            return errorResponse("invalid_request", "Missing required parameters");
+        }
+
+        Optional<AuthCodeData> codeData = authCodeService.exchangeCode(code, clientId, redirectUri);
+
+        if (codeData.isEmpty()) {
+            return errorResponse("invalid_grant", "Invalid or expired authorization code");
+        }
+
+        AuthCodeData data = codeData.get();
+        Optional<User> user = userService.findByUsername(data.subject());
+
+        if (user.isEmpty()) {
+            // User was deleted after code was issued
+            return errorResponse("invalid_grant", "User not found");
+        }
+
+        return issueTokens(user.get(), clientId, data.scope(), data.nonce());
+    }
+
+    private ResponseEntity<?> handlePasswordGrant(String username, String password, String clientId, String scope) {
+        if (username == null || password == null) {
+            return errorResponse("invalid_request", "Username and password required");
+        }
+
+        Optional<User> user = userService.authenticate(username, password);
+
+        if (user.isEmpty()) {
+            return errorResponse("invalid_grant", "Invalid username or password");
+        }
+
+        String effectiveScope = scope != null ? scope : "openid profile email";
+        String effectiveClientId = clientId != null ? clientId : "default-client";
+
+        return issueTokens(user.get(), effectiveClientId, effectiveScope, null);
+    }
+
+    private ResponseEntity<?> handleRefreshToken(String refreshToken) {
+        if (refreshToken == null) {
+            return errorResponse("invalid_request", "Refresh token required");
+        }
+
+        Optional<JWTClaimsSet> claims = tokenService.validateToken(refreshToken);
+
+        if (claims.isEmpty()) {
+            return errorResponse("invalid_grant", "Invalid or expired refresh token");
+        }
+
+        String subject = claims.get().getSubject();
+        Optional<User> user = userService.findByUsername(subject);
+
+        if (user.isEmpty()) {
+            return errorResponse("invalid_grant", "User not found");
+        }
+
+        return issueTokens(user.get(), "default-client", "openid profile email", null);
+    }
+
+    private ResponseEntity<TokenResponse> issueTokens(User user, String clientId, String scope, String nonce) {
+        String accessToken = tokenService.generateAccessToken(user, scope);
+        String idToken = tokenService.generateIdToken(user, clientId, nonce);
+        String newRefreshToken = tokenService.generateRefreshToken(user);
+
+        TokenResponse response = TokenResponse.bearer(
+                accessToken,
+                idToken,
+                newRefreshToken,
+                properties.getAccessTokenExpiry(),
+                scope);
+
+        log.info("Issued tokens for user: {}", user.getSubject());
+        return ResponseEntity.ok(response);
+    }
+
+    private ResponseEntity<Map<String, String>> errorResponse(String error, String description) {
+        log.warn("Token error: {} - {}", error, description);
+        return ResponseEntity.badRequest().body(Map.of(
+                "error", error,
+                "error_description", description));
+    }
+}

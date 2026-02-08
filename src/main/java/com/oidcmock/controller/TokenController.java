@@ -13,9 +13,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -71,13 +75,31 @@ public class TokenController {
             @RequestParam(value = "username", required = false) String username,
             @RequestParam(value = "password", required = false) String password,
             @RequestParam(value = "refresh_token", required = false) String refreshToken,
-            @RequestParam(value = "scope", required = false) String scope) {
+            @RequestParam(value = "scope", required = false) String scope,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
 
-        log.debug("Token request: grant_type={}", grantType);
+        log.info("Token request: grant_type={}, clientId={}, code={}, redirectUri={}, authHeader={}",
+                grantType, clientId, code, redirectUri, authHeader != null ? "present" : "absent");
+
+        String effectiveClientId = clientId;
+
+        // Support Basic Auth for client_id
+        if (effectiveClientId == null && authHeader != null && authHeader.startsWith("Basic ")) {
+            try {
+                String base64Credentials = authHeader.substring(6);
+                String credentials = new String(Base64.getDecoder().decode(base64Credentials), StandardCharsets.UTF_8);
+                // credentials = "client_id:client_secret"
+                effectiveClientId = credentials.split(":", 2)[0];
+                log.debug("Extracted clientId from Basic Auth: {}", effectiveClientId);
+            } catch (Exception e) {
+                log.error("Failed to decode Basic Auth header", e);
+            }
+        }
 
         return switch (grantType) {
-            case "authorization_code" -> handleAuthorizationCode(code, redirectUri, clientId);
-            case "password" -> handlePasswordGrant(username, password, clientId, scope);
+            case "authorization_code" -> handleAuthorizationCode(code, redirectUri, effectiveClientId);
+            case "password" -> handlePasswordGrant(username, password, effectiveClientId, scope);
+            case "client_credentials" -> handleClientCredentials(effectiveClientId, scope);
             case "refresh_token" -> handleRefreshToken(refreshToken);
             default -> errorResponse("unsupported_grant_type", "Grant type not supported: " + grantType);
         };
@@ -120,6 +142,23 @@ public class TokenController {
         String effectiveClientId = clientId != null ? clientId : "default-client";
 
         return issueTokens(user.get(), effectiveClientId, effectiveScope, null);
+    }
+
+    private ResponseEntity<?> handleClientCredentials(String clientId, String scope) {
+        if (clientId == null) {
+            return errorResponse("invalid_client", "Client ID required");
+        }
+
+        Optional<OidcProperties.Client> client = properties.findClient(clientId);
+        if (client.isEmpty()) {
+            return errorResponse("invalid_client", "Unknown client: " + clientId);
+        }
+
+        // Issue token for the client itself
+        User clientUser = new User(clientId, "", Map.of("sub", clientId, "roles", List.of("client")));
+        String effectiveScope = scope != null ? scope : "openid";
+
+        return issueTokens(clientUser, clientId, effectiveScope, null);
     }
 
     private ResponseEntity<?> handleRefreshToken(String refreshToken) {

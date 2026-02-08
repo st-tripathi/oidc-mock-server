@@ -1,0 +1,16 @@
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          oidc:
+            client-id: ${SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_OIDC_CLIENT_ID}
+            client-secret: ${SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_OIDC_CLIENT_SECRET}
+            scope: openid, profile, email
+        provider:
+          oidc:
+            # issuer-uri removed to support manual endpoint configuration
+            # issuer-uri: ${SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_OIDC_ISSUER_URI}
+
+kong:
+  url: ${KONG_URL}

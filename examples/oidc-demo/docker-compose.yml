@@ -1,0 +1,64 @@
+services:
+  idp:
+    container_name: oidc-demo-idp
+    build: ../../
+    ports:
+      - "9091:8080"
+    environment:
+      - OIDC_ISSUER=http://localhost:9091
+      - OIDC_SIGNING_KEY_PATH=/app/config/jwk.json
+      - LOGGING_LEVEL_COM_OIDCMOCK=INFO
+      - SPRING_CONFIG_IMPORT=file:/app/users.yaml
+    healthcheck:
+      test: [ "CMD", "wget", "-q", "--spider", "http://localhost:8080/actuator/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+    volumes:
+      - ./config/users.yaml:/app/users.yaml:ro
+      - ./config/jwk.json:/app/config/jwk.json:ro
+    restart: unless-stopped
+
+  kong:
+    container_name: oidc-demo-kong
+    image: kong:3.5
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /usr/local/kong/declarative/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+    volumes:
+      - ./config/kong.yml:/usr/local/kong/declarative/kong.yml:ro
+    restart: unless-stopped
+
+  backend:
+    container_name: oidc-demo-backend
+    image: mendhak/http-https-echo
+    restart: unless-stopped
+
+  frontend:
+    container_name: oidc-demo-frontend
+    build: ./frontend
+    ports:
+      - "8082:8080"
+    environment:
+      - SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_OIDC_CLIENT_ID=demo-client
+      - SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_OIDC_CLIENT_SECRET=demo-secret
+      - SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_OIDC_AUTHORIZATION_GRANT_TYPE=authorization_code
+      - SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_OIDC_REDIRECT_URI={baseUrl}/login/oauth2/code/{registrationId}
+      # Manual Provider Configuration to handle Docker Split-Horizon
+      # - SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_OIDC_ISSUER_URI=http://localhost:9091
+      - SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_OIDC_AUTHORIZATION_URI=http://localhost:9091/authorize
+      - SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_OIDC_TOKEN_URI=http://idp:8080/token
+      - SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_OIDC_USER_INFO_URI=http://idp:8080/userinfo
+      - SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_OIDC_JWK_SET_URI=http://idp:8080/.well-known/jwks.json
+      - SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_OIDC_USER_NAME_ATTRIBUTE=sub
+      - KONG_URL=http://kong:8000
+    restart: unless-stopped

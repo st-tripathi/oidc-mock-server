@@ -18,11 +18,13 @@ When building applications that integrate with identity providers (Keycloak, Aut
 
 ## 🚀 Quick Start
 
-### Option 1: Docker (Recommended)
-
 ```bash
-docker run -p 8080:8080 ghcr.io/st-tripathi/oidc-mock-server:latest
+docker run -p 9090:8080 ghcr.io/st-tripathi/oidc-mock-server:latest
 ```
+
+> [!NOTE]
+> The server runs on port **8080** inside the container. We recommend mapping it to **9090** on the host to avoid conflicts with other local services.
+
 
 ### Option 2: From Source
 
@@ -89,7 +91,7 @@ curl http://localhost:8080/userinfo \
 Create a `users.yaml` file or set environment variables:
 
 ```yaml
-# users.yaml
+# application.yaml or mounted config
 oidc:
   users:
     - username: alice
@@ -100,16 +102,18 @@ oidc:
         name: "Alice Smith"
         roles:
           - admin
-          - user
-    - username: bob
-      password: bob123
-      claims:
-        sub: "user-bob"
-        email: "bob@example.com"
-        name: "Bob Jones"
-        roles:
-          - user
+  
+  clients:
+    - client-id: my-app
+      redirect-uris:
+        - http://localhost:3000/api/auth/callback/oidc
+        - http://localhost:9090/callback
 ```
+
+### Security: Redirect URI Validation
+
+To prevent **Open Redirect** attacks, the server strictly validates `redirect_uri` against the whitelisted `redirect-uris` defined for each client. If a request is made with an unknown `client_id` or an unregistered `redirect_uri`, the server will display an error and refuse to proceed.
+
 
 Mount when running Docker:
 ```bash

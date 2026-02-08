@@ -24,6 +24,7 @@ public class OidcProperties {
     private long idTokenExpiry = 3600;
     private long refreshTokenExpiry = 86400;
     private long authCodeExpiry = 300;
+    private String signingKeyPath;
     private List<User> users = new ArrayList<>();
     private List<Client> clients = new ArrayList<>();
 
@@ -67,6 +68,14 @@ public class OidcProperties {
 
     public void setAuthCodeExpiry(long authCodeExpiry) {
         this.authCodeExpiry = authCodeExpiry;
+    }
+
+    public String getSigningKeyPath() {
+        return signingKeyPath;
+    }
+
+    public void setSigningKeyPath(String signingKeyPath) {
+        this.signingKeyPath = signingKeyPath;
     }
 
     public List<User> getUsers() {

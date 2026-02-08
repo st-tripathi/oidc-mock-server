@@ -1,0 +1,17 @@
+oidc:
+  users:
+    - username: demo-user
+      password: password
+      claims:
+        sub: "user-demo"
+        email: "demo@example.com"
+        name: "Demo User"
+        roles:
+          - user
+          - tester
+  
+  clients:
+    - client-id: demo-client
+      client-secret: demo-secret
+      redirect-uris:
+        - http://localhost:8082/login/oauth2/code/oidc

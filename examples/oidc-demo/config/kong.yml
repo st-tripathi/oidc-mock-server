@@ -1,0 +1,32 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+  - name: mockbin-service
+    url: http://backend:8080
+    routes:
+      - name: secure-route
+        paths:
+          - /api/secure-data
+        plugins:
+          - name: jwt
+            config:
+              claims_to_verify:
+                - exp
+              key_claim_name: kid
+
+consumers:
+  - username: oidc-user
+    jwt_secrets:
+      - key: demo-kid
+        algorithm: RS256
+        rsa_public_key: |
+          -----BEGIN PUBLIC KEY-----
+          MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwOCJ/j3wjcORfq+8aU52
+          cNiG+Iba5C+GvienKwsWfw6Wnv8YaXq2aMu6YLcJiH5Hz8xw1HpNiQCYOiP4PfgP
+          9uztltR5nbw3WEEOO4g3AQPpC6BifhPX4hIN0UBUdRGjZMSiocj+LQkExDz68a4r
+          ortT+sc6zHIuJw4Nd1teRWHbu4I6o6mr1Z4fiIeN1MNtf9cz0DT95MUsPtlqzwD6
+          8D6jgovTjTH3xg3Y///gbuhAH5KFqBUqSa54q+g0+FXmO3Zv/w3RNURTzth9oTDh
+          VXtCvuX+f4Np0sksfjCqW7hSapDklH/sMU8lCh3Q01iIulfvneEuhtGd04HfhD6q
+          /QIDAQAB
+          -----END PUBLIC KEY-----

@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <title>OIDC Demo Dashboard</title>
+    <style>
+        :root {
+            --primary: #6c5ce7;
+            --success: #00b894;
+            --danger: #d63031;
+            --dark: #2d3436;
+            --light: #f8f9fa;
+            --card-bg: #ffffff;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            margin: 0;
+            background: var(--light);
+            color: var(--dark);
+            line-height: 1.6;
+        }
+
+        .header {
+            background: var(--primary);
+            color: white;
+            padding: 40px 20px;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: -40px auto 40px;
+            background: white;
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        h1,
+        h2,
+        h3 {
+            margin-top: 0;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .flow-card {
+            background: var(--light);
+            border: 2px solid #eee;
+            padding: 25px;
+            border-radius: 12px;
+            text-align: center;
+            transition: transform 0.2s, border-color 0.2s;
+            cursor: pointer;
+        }
+
+        .flow-card:hover {
+            transform: translateY(-5px);
+            border-color: var(--primary);
+        }
+
+        .flow-card h3 {
+            color: var(--primary);
+            margin-bottom: 15px;
+        }
+
+        .flow-card p {
+            font-size: 0.9em;
+            color: #636e72;
+            margin-bottom: 20px;
+            height: 45px;
+            overflow: hidden;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            font-size: 0.9em;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+        }
+
+        .result-card {
+            background: #fff;
+            border: 1px solid #e1e4e8;
+            padding: 25px;
+            border-radius: 12px;
+            margin-top: 30px;
+            animation: fadeIn 0.5s ease;
+        }
+
+        .token-box {
+            background: #f1f2f6;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.85em;
+            word-break: break-all;
+            margin: 10px 0;
+            border: 1px solid #dfe6e9;
+        }
+
+        .response-box {
+            background: var(--dark);
+            color: #81ecec;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: monospace;
+            overflow-x: auto;
+            margin-top: 10px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75em;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+
+        .badge-flow {
+            background: #a29bfe;
+            color: #2d3436;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 100;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-content {
+            background: white;
+            margin: 10% auto;
+            padding: 30px;
+            border-radius: 12px;
+            width: 400px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0 20px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>OIDC Discovery Dashboard</h1>
+        <p>Explore different OpenID Connect & OAuth2 flows with Mock IdP</p>
+    </div>
+
+    <div class="container">
+        <div class="grid">
+            <!-- Auth Code Flow -->
+            <div class="flow-card" onclick="window.location.href='/oauth2/authorization/oidc'">
+                <h3>Auth Code</h3>
+                <p>Interactive login with redirection. Most secure flow.</p>
+                <span class="btn btn-primary">Try Standard Login</span>
+            </div>
+
+            <!-- Client Credentials -->
+            <div class="flow-card">
+                <form th:action="@{/flow/client-credentials}" method="post">
+                    <h3>Service Account</h3>
+                    <p>Machine-to-machine authentication using client secrets.</p>
+                    <button type="submit" class="btn btn-success">Trigger API call</button>
+                </form>
+            </div>
+
+            <!-- Password Grant -->
+            <div class="flow-card" onclick="document.getElementById('passwordModal').style.display='block'">
+                <h3>Password Grant</h3>
+                <p>Direct login with credentials. Legacy support.</p>
+                <span class="btn btn-primary">Direct Login</span>
+            </div>
+
+            <!-- Implicit Flow (Simulation) -->
+            <div class="flow-card"
+                onclick="window.location.href='http://localhost:9091/authorize?client_id=demo-client&redirect_uri=http://localhost:8082/&response_type=token&scope=openid&state=xyz'">
+                <h3>Implicit Flow</h3>
+                <p>Tokens returned directly in the URL fragment.</p>
+                <span class="btn btn-primary">Trigger Implicit</span>
+            </div>
+        </div>
+
+        <div th:if="${error}" class="result-card" style="border-left: 5px solid var(--danger);">
+            <h3 style="color: var(--danger)">Error</h3>
+            <p th:text="${error}"></p>
+        </div>
+
+        <div th:if="${name}" class="result-card">
+            <span class="badge badge-flow" th:text="${flow}"></span>
+            <h2>Session Data: <span th:text="${name}"></span></h2>
+
+            <div style="margin-top: 20px;">
+                <h3>Access Token</h3>
+                <div class="token-box" th:text="${accessToken}"></div>
+            </div>
+
+            <div th:if="${backendResponse}" style="margin-top: 20px;">
+                <h3>Backend Response (via Kong Gateway)</h3>
+                <div class="response-box">
+                    <pre th:text="${backendResponse}"></pre>
+                </div>
+            </div>
+
+            <div style="margin-top: 30px; display: flex; gap: 10px;">
+                <form th:action="@{/logout}" method="post">
+                    <button type="submit" class="btn btn-danger">Logout / Reset</button>
+                </form>
+                <a href="/" class="btn btn-primary" style="background: #dfe6e9; color: #2d3436;">Clear Dashboard</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Password Modal -->
+    <div id="passwordModal" class="modal">
+        <div class="modal-content">
+            <h3>Password Grant Login</h3>
+            <form th:action="@{/flow/password}" method="post">
+                <label>Username</label>
+                <input type="text" name="username" value="demo-user">
+                <label>Password</label>
+                <input type="password" name="password" value="password">
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="btn btn-primary">Login</button>
+                    <button type="button" class="btn btn-danger"
+                        onclick="document.getElementById('passwordModal').style.display='none'">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Handle Implicit flow fragment capture
+        if (window.location.hash) {
+            const params = new URLSearchParams(window.location.hash.substring(1));
+            const token = params.get('access_token');
+            if (token) {
+                // In a real app we'd handle this client-side. 
+                // For this demo, we'll just show a message or redirect with token to dashboard.
+                alert('Captured Access Token from Implicit Flow Fragment!');
+            }
+        }
+    </script>
+</body>
+
+</html>

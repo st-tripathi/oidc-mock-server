@@ -71,7 +71,14 @@ public class AuthorizationController {
         // Security: Validate client and redirect URI
         if (!isValidRedirect(clientId, redirectUri)) {
             log.warn("Invalid authorize request: clientId={}, redirectUri={}", clientId, redirectUri);
-            model.addAttribute("error", "Invalid client_id or redirect_uri");
+
+            String availableClients = properties.getClients().stream()
+                    .map(OidcProperties.Client::clientId)
+                    .collect(java.util.stream.Collectors.joining(", "));
+
+            model.addAttribute("error", String.format(
+                    "Invalid client_id '%s' or redirect_uri '%s'. Registered clients: [%s]",
+                    clientId, redirectUri, availableClients));
             return "login";
         }
 
@@ -111,14 +118,18 @@ public class AuthorizationController {
 
             if ("token".equals(responseType)) {
                 // Implicit Flow: Redirect with token in fragment
-                // Note: In real life we'd also issue an ID token if openid scope is present
-                // For this mock, we'll keep it simple: access_token only.
-                // We'll use a manually constructed fragment redirect
                 String accessToken = tokenService.generateAccessToken(user.get(), scope);
 
                 StringBuilder fragment = new StringBuilder("access_token=").append(accessToken);
                 fragment.append("&token_type=Bearer");
                 fragment.append("&expires_in=").append(properties.getAccessTokenExpiry());
+
+                // OIDC Spec: Include id_token if openid scope is present
+                if (scope != null && scope.contains("openid")) {
+                    String idToken = tokenService.generateIdToken(user.get(), clientId, nonce);
+                    fragment.append("&id_token=").append(idToken);
+                }
+
                 if (state != null) {
                     fragment.append("&state=").append(state);
                 }
@@ -147,7 +158,11 @@ public class AuthorizationController {
         log.warn("Authentication failed for user: {}", username);
 
         // Login failed
-        model.addAttribute("error", "Invalid credentials");
+        String availableUsers = properties.getUsers().stream()
+                .map(User::username)
+                .collect(java.util.stream.Collectors.joining(", "));
+
+        model.addAttribute("error", String.format("Invalid credentials. Available users: [%s]", availableUsers));
         model.addAttribute("clientId", clientId);
         model.addAttribute("redirectUri", redirectUri);
         model.addAttribute("scope", scope);
@@ -166,8 +181,13 @@ public class AuthorizationController {
     }
 
     private boolean isValidRedirect(String clientId, String redirectUri) {
+        String normalizedRequest = redirectUri.endsWith("/") ? redirectUri.substring(0, redirectUri.length() - 1)
+                : redirectUri;
+
         return properties.findClient(clientId)
-                .map(client -> client.redirectUris().contains(redirectUri))
+                .map(client -> client.redirectUris().stream()
+                        .map(uri -> uri.endsWith("/") ? uri.substring(0, uri.length() - 1) : uri)
+                        .anyMatch(normalizedRequest::equals))
                 .orElse(false);
     }
 }

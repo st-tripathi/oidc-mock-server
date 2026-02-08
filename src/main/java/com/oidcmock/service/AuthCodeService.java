@@ -1,5 +1,8 @@
 package com.oidcmock.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
@@ -20,7 +23,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Service
 public class AuthCodeService {
-    
+
+    private static final Logger log = LoggerFactory.getLogger(AuthCodeService.class);
     private static final int CODE_LENGTH = 32;
     private static final SecureRandom RANDOM = new SecureRandom();
     
@@ -74,8 +78,8 @@ public class AuthCodeService {
     /**
      * Exchanges an authorization code for its associated data.
      * 
-     * <p>The code is consumed (deleted) on successful exchange.
-     * Expired or invalid codes return empty.</p>
+     * <p>The code is consumed (deleted) only on successful exchange.
+     * Expired codes are cleaned up, but validation failures do not consume the code.</p>
      * 
      * @param code        the authorization code
      * @param clientId    the client ID (must match original)
@@ -87,25 +91,45 @@ public class AuthCodeService {
             String clientId, 
             String redirectUri) {
         
-        AuthCodeData data = codes.remove(code);
+        AuthCodeData data = codes.get(code);
         
         if (data == null) {
             return Optional.empty();
         }
         
         if (data.isExpired()) {
+            codes.remove(code);
+            log.debug("Auth code expired and removed");
             return Optional.empty();
         }
         
         if (!data.clientId().equals(clientId)) {
+            log.warn("Client ID mismatch for auth code exchange: expected={}, actual={}", data.clientId(), clientId);
             return Optional.empty();
         }
         
         if (!data.redirectUri().equals(redirectUri)) {
+            log.warn("Redirect URI mismatch for auth code exchange: expected={}, actual={}", data.redirectUri(), redirectUri);
             return Optional.empty();
         }
         
+        // Only consume the code after successful validation
+        codes.remove(code);
         return Optional.of(data);
+    }
+
+    /**
+     * Periodically cleans up expired authorization codes.
+     * Runs every 5 minutes.
+     */
+    @Scheduled(fixedRate = 300000)
+    public void cleanupExpiredCodes() {
+        int before = codes.size();
+        codes.entrySet().removeIf(entry -> entry.getValue().isExpired());
+        int removed = before - codes.size();
+        if (removed > 0) {
+            log.debug("Cleaned up {} expired auth codes", removed);
+        }
     }
     
     private String generateSecureCode() {

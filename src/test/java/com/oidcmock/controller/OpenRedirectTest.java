@@ -36,6 +36,7 @@ public class OpenRedirectTest {
                 .param("redirect_uri", evilUri))
                 .andExpect(status().isOk()) // Returns 200 OK (Login Page)
                 .andExpect(view().name("login"))
-                .andExpect(model().attribute("error", "Invalid client_id or redirect_uri"));
+                .andExpect(model().attribute("error", org.hamcrest.Matchers
+                        .containsString("Invalid client_id 'test-client' or redirect_uri 'http://evil.com/callback'")));
     }
 }

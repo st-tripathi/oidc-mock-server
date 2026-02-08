@@ -55,6 +55,8 @@ public class UserService {
      */
     public Optional<User> authenticate(String username, String password) {
         return findByUsername(username)
-                .filter(user -> user.password().equals(password));
+                .filter(user -> java.security.MessageDigest.isEqual(
+                        user.password().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        password.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
     }
 }

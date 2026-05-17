@@ -7,9 +7,11 @@ services:
       - "9090:8080"
     environment:
       - OIDC_ISSUER=http://localhost:9090
-      - LOGGING_LEVEL_COM_OIDCMOCK=DEBUG
+      # Uncomment for verbose logging:
+      # - LOGGING_LEVEL_COM_OIDCMOCK=DEBUG
     volumes:
-      - ./users.yaml:/app/users.yaml:ro
+      # Mount users.example.yaml as users.yaml, or replace with your own file.
+      - ./users.example.yaml:/app/users.yaml:ro
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "wget", "-q", "--spider", "http://localhost:8080/actuator/health" ]

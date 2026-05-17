@@ -2,9 +2,26 @@
 server:
   port: 8080
 
+spring:
+  config:
+    # Allows mounting a custom users.yaml (via Docker volume or local file).
+    # Works both from source (./users.yaml) and in the container (/app/users.yaml).
+    import: "optional:file:./users.yaml"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
 oidc:
-  # Issuer URL - appears in tokens and discovery document
-  issuer: http://localhost:9090
+  # Issuer URL - appears in tokens and discovery document.
+  # Must match the URL clients use to reach this server.
+  # Override with OIDC_ISSUER env var (e.g. http://localhost:9090 when using Docker with -p 9090:8080).
+  issuer: http://localhost:8080
   
   # Token lifetimes in seconds
   access-token-expiry: 3600    # 1 hour
@@ -49,7 +66,7 @@ oidc:
         - http://localhost:3000/api/auth/callback/oidc
 
 
-# Logging
+# Logging — override with LOGGING_LEVEL_COM_OIDCMOCK=DEBUG for verbose output
 logging:
   level:
-    com.oidcmock: DEBUG
+    com.oidcmock: INFO

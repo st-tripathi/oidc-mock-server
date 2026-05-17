@@ -5,6 +5,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
@@ -37,10 +40,16 @@ public class AuthCodeService {
         String redirectUri,
         String scope,
         String nonce,
-        Instant expiresAt
+        Instant expiresAt,
+        String codeChallenge,
+        String codeChallengeMethod
     ) {
         public boolean isExpired() {
             return Instant.now().isAfter(expiresAt);
+        }
+
+        public boolean hasPkce() {
+            return codeChallenge != null && !codeChallenge.isEmpty();
         }
     }
     
@@ -63,15 +72,18 @@ public class AuthCodeService {
             String redirectUri,
             String scope,
             String nonce,
-            long expirySeconds) {
-        
+            long expirySeconds,
+            String codeChallenge,
+            String codeChallengeMethod) {
+
         String code = generateSecureCode();
         Instant expiresAt = Instant.now().plusSeconds(expirySeconds);
-        
+
         codes.put(code, new AuthCodeData(
-            subject, clientId, redirectUri, scope, nonce, expiresAt
+            subject, clientId, redirectUri, scope, nonce, expiresAt,
+            codeChallenge, codeChallengeMethod
         ));
-        
+
         return code;
     }
     
@@ -86,36 +98,68 @@ public class AuthCodeService {
      * @param redirectUri the redirect URI (must match original)
      * @return the code data if valid and not expired
      */
+    /**
+     * @param codeVerifier PKCE code_verifier from the token request; null if not provided
+     */
     public Optional<AuthCodeData> exchangeCode(
-            String code, 
-            String clientId, 
-            String redirectUri) {
-        
+            String code,
+            String clientId,
+            String redirectUri,
+            String codeVerifier) {
+
         AuthCodeData data = codes.get(code);
-        
+
         if (data == null) {
             return Optional.empty();
         }
-        
+
         if (data.isExpired()) {
             codes.remove(code);
             log.debug("Auth code expired and removed");
             return Optional.empty();
         }
-        
+
         if (!data.clientId().equals(clientId)) {
             log.warn("Client ID mismatch for auth code exchange: expected={}, actual={}", data.clientId(), clientId);
             return Optional.empty();
         }
-        
+
         if (!data.redirectUri().equals(redirectUri)) {
             log.warn("Redirect URI mismatch for auth code exchange: expected={}, actual={}", data.redirectUri(), redirectUri);
             return Optional.empty();
         }
-        
-        // Only consume the code after successful validation
+
+        // PKCE verification (RFC 7636)
+        if (data.hasPkce()) {
+            if (codeVerifier == null) {
+                log.warn("PKCE code_verifier missing for code that was issued with a challenge");
+                return Optional.empty();
+            }
+            if (!verifyPkce(codeVerifier, data.codeChallenge(), data.codeChallengeMethod())) {
+                log.warn("PKCE code_verifier verification failed");
+                return Optional.empty();
+            }
+        }
+
         codes.remove(code);
         return Optional.of(data);
+    }
+
+    private boolean verifyPkce(String verifier, String challenge, String method) {
+        if ("S256".equals(method)) {
+            try {
+                MessageDigest digest = MessageDigest.getInstance("SHA-256");
+                byte[] hash = digest.digest(verifier.getBytes(StandardCharsets.US_ASCII));
+                String computed = Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+                return MessageDigest.isEqual(computed.getBytes(StandardCharsets.UTF_8),
+                        challenge.getBytes(StandardCharsets.UTF_8));
+            } catch (NoSuchAlgorithmException e) {
+                throw new RuntimeException("SHA-256 not available", e);
+            }
+        }
+        // plain method
+        return MessageDigest.isEqual(verifier.getBytes(StandardCharsets.UTF_8),
+                challenge.getBytes(StandardCharsets.UTF_8));
     }
 
     /**

@@ -13,6 +13,9 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.util.UriComponentsBuilder;
+import org.springframework.web.util.UriUtils;
+
+import java.nio.charset.StandardCharsets;
 
 import java.util.List;
 import java.util.Map;
@@ -61,14 +64,11 @@ public class AuthorizationController {
             @RequestParam(value = "scope", required = false) String scope,
             @RequestParam(value = "state", required = false) String state,
             @RequestParam(value = "nonce", required = false) String nonce,
+            @RequestParam(value = "code_challenge", required = false) String codeChallenge,
+            @RequestParam(value = "code_challenge_method", required = false) String codeChallengeMethod,
             Model model) {
 
-        // Basic validation
-        if (!"code".equals(responseType) && !"token".equals(responseType)) {
-            return "redirect:" + errorRedirect(redirectUri, "unsupported_response_type", state);
-        }
-
-        // Security: Validate client and redirect URI
+        // Security: Validate client and redirect URI FIRST — before using redirectUri in any redirect
         if (!isValidRedirect(clientId, redirectUri)) {
             log.warn("Invalid authorize request: clientId={}, redirectUri={}", clientId, redirectUri);
 
@@ -82,6 +82,11 @@ public class AuthorizationController {
             return "login";
         }
 
+        // Now that redirectUri is validated, it is safe to use it in error redirects
+        if (!"code".equals(responseType) && !"token".equals(responseType)) {
+            return "redirect:" + errorRedirect(redirectUri, "unsupported_response_type", state);
+        }
+
         // Pass params to view
         model.addAttribute("clientId", clientId);
         model.addAttribute("redirectUri", redirectUri);
@@ -89,6 +94,8 @@ public class AuthorizationController {
         model.addAttribute("state", state);
         model.addAttribute("nonce", nonce);
         model.addAttribute("responseType", responseType);
+        model.addAttribute("codeChallenge", codeChallenge);
+        model.addAttribute("codeChallengeMethod", codeChallengeMethod != null ? codeChallengeMethod : "plain");
 
         return "login"; // Renders src/main/resources/templates/login.html
     }
@@ -103,6 +110,8 @@ public class AuthorizationController {
             @RequestParam("scope") String scope,
             @RequestParam(value = "state", required = false) String state,
             @RequestParam(value = "nonce", required = false) String nonce,
+            @RequestParam(value = "code_challenge", required = false) String codeChallenge,
+            @RequestParam(value = "code_challenge_method", required = false) String codeChallengeMethod,
             Model model) {
 
         // Security: Validate client and redirect URI (Double check)
@@ -131,7 +140,7 @@ public class AuthorizationController {
                 }
 
                 if (state != null) {
-                    fragment.append("&state=").append(state);
+                    fragment.append("&state=").append(UriUtils.encode(state, StandardCharsets.UTF_8));
                 }
 
                 return "redirect:" + redirectUri + "#" + fragment.toString();
@@ -144,7 +153,9 @@ public class AuthorizationController {
                     redirectUri,
                     scope,
                     nonce,
-                    properties.getAuthCodeExpiry());
+                    properties.getAuthCodeExpiry(),
+                    codeChallenge,
+                    codeChallengeMethod);
 
             String redirectUrl = UriComponentsBuilder.fromUriString(redirectUri)
                     .queryParam("code", code)
@@ -168,6 +179,8 @@ public class AuthorizationController {
         model.addAttribute("scope", scope);
         model.addAttribute("state", state);
         model.addAttribute("nonce", nonce);
+        model.addAttribute("codeChallenge", codeChallenge);
+        model.addAttribute("codeChallengeMethod", codeChallengeMethod);
 
         return "login";
     }

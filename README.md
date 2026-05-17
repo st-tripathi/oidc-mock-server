@@ -1,5 +1,6 @@
 # OIDC Mock Server
 
+[![CI](https://github.com/st-tripathi/oidc-mock-server/actions/workflows/ci.yml/badge.svg)](https://github.com/st-tripathi/oidc-mock-server/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.org/projects/jdk/21/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
@@ -18,13 +19,14 @@ When building applications that integrate with identity providers (Keycloak, Aut
 
 ## 🚀 Quick Start
 
+### Option 1: Docker
+
 ```bash
 docker run -p 9090:8080 ghcr.io/st-tripathi/oidc-mock-server:latest
 ```
 
 > [!NOTE]
 > The server runs on port **8080** inside the container. We recommend mapping it to **9090** on the host to avoid conflicts with other local services.
-
 
 ### Option 2: From Source
 
@@ -37,6 +39,10 @@ cd oidc-mock-server
 ### Verify It's Running
 
 ```bash
+# If running via Docker (mapped to host port 9090):
+curl http://localhost:9090/.well-known/openid-configuration | jq
+
+# If running from source (default port 8080):
 curl http://localhost:8080/.well-known/openid-configuration | jq
 ```
 
@@ -67,7 +73,15 @@ curl http://localhost:8080/userinfo \
   -H "Authorization: Bearer <your-access-token>"
 ```
 
-### Full Authorization Code Flow
+### Introspect a Token
+
+```bash
+curl -X POST http://localhost:8080/introspect \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "token=<your-token>"
+```
+
+### Full Authorization Code Flow (with PKCE)
 
 1. **Redirect to authorize:**
    ```
@@ -75,23 +89,25 @@ curl http://localhost:8080/userinfo \
      response_type=code&
      client_id=test-client&
      redirect_uri=http://localhost:3000/callback&
-     scope=openid profile email
+     scope=openid profile email&
+     code_challenge=<BASE64URL(SHA256(verifier))>&
+     code_challenge_method=S256
    ```
 
 2. **Exchange code for tokens:**
    ```bash
    curl -X POST http://localhost:8080/token \
-     -d "grant_type=authorization_code&code=<auth-code>&redirect_uri=http://localhost:3000/callback&client_id=test-client"
+     -d "grant_type=authorization_code&code=<auth-code>&redirect_uri=http://localhost:3000/callback&client_id=test-client&code_verifier=<verifier>"
    ```
 
 ## ⚙️ Configuration
 
 ### Custom Users
 
-Create a `users.yaml` file or set environment variables:
+Mount a `users.yaml` file via Docker volume or edit `application.yaml`:
 
 ```yaml
-# application.yaml or mounted config
+# users.yaml (mount to /app/users.yaml in Docker)
 oidc:
   users:
     - username: alice
@@ -102,41 +118,57 @@ oidc:
         name: "Alice Smith"
         roles:
           - admin
-  
+
   clients:
     - client-id: my-app
+      client-secret: my-secret
       redirect-uris:
         - http://localhost:3000/api/auth/callback/oidc
         - http://localhost:9090/callback
 ```
 
-### Security: Redirect URI Validation
-
-To prevent **Open Redirect** attacks, the server strictly validates `redirect_uri` against the whitelisted `redirect-uris` defined for each client. If a request is made with an unknown `client_id` or an unregistered `redirect_uri`, the server will display an error and refuse to proceed.
-
-
 Mount when running Docker:
 ```bash
-docker run -p 8080:8080 -v $(pwd)/users.yaml:/app/users.yaml ghcr.io/st-tripathi/oidc-mock-server:latest
+docker run -p 9090:8080 \
+  -v $(pwd)/users.yaml:/app/users.yaml \
+  ghcr.io/st-tripathi/oidc-mock-server:latest
 ```
+
+### Security: Redirect URI Validation
+
+To prevent **Open Redirect** attacks, the server validates `redirect_uri` against the allowlist defined for each client before using it in any redirect. Requests with unknown `client_id` or unregistered `redirect_uri` are rejected with an error page.
 
 ### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `OIDC_ISSUER` | `http://localhost:8080` | Issuer URL in tokens |
-| `OIDC_TOKEN_EXPIRY` | `3600` | Token lifetime in seconds |
-| `OIDC_SIGNING_KEY` | Auto-generated | RSA private key for JWT signing |
+| `OIDC_ISSUER` | `http://localhost:8080` | Issuer URL embedded in tokens |
+| `OIDC_ACCESS_TOKEN_EXPIRY` | `3600` | Access token lifetime (seconds) |
+| `OIDC_ID_TOKEN_EXPIRY` | `3600` | ID token lifetime (seconds) |
+| `OIDC_REFRESH_TOKEN_EXPIRY` | `86400` | Refresh token lifetime (seconds) |
+| `OIDC_AUTH_CODE_EXPIRY` | `300` | Authorization code lifetime (seconds) |
+| `OIDC_SIGNING_KEY_PATH` | Auto-generated | Path to RSA JWK private key file |
 
 ## 🔌 Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/.well-known/openid-configuration` | GET | OIDC Discovery document |
-| `/.well-known/jwks.json` | GET | JSON Web Key Set |
-| `/authorize` | GET | Authorization endpoint |
+| `/.well-known/jwks.json` | GET | JSON Web Key Set (public keys) |
+| `/authorize` | GET/POST | Authorization endpoint (login form) |
 | `/token` | POST | Token endpoint |
 | `/userinfo` | GET | UserInfo endpoint |
+| `/introspect` | POST | Token introspection (RFC 7662) |
+| `/actuator/health` | GET | Health check |
+
+### Supported Grant Types
+
+| Grant Type | Description |
+|------------|-------------|
+| `authorization_code` | Standard code flow, with optional PKCE (RFC 7636) |
+| `client_credentials` | Machine-to-machine tokens |
+| `refresh_token` | Refresh an access token |
+| `password` | Direct credentials (dev/testing only) |
 
 ## 🏗️ Architecture
 
@@ -148,6 +180,10 @@ See [ARCHITECTURE.md](./docs/ARCHITECTURE.md) for detailed system design, includ
 ## 🤝 Contributing
 
 We welcome contributions! See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+
+## 🔒 Security
+
+This is a **development/testing tool** — not designed for production use. See [SECURITY.md](./SECURITY.md) for the vulnerability disclosure policy and a full list of intentional simplifications.
 
 ## 📄 License
 

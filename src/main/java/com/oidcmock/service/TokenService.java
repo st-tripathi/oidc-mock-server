@@ -113,15 +113,18 @@ public class TokenService {
     }
     
     /**
-     * Generates a refresh token.
-     * 
-     * @param user the authenticated user
+     * Generates a refresh token encoding the original client and scope so they
+     * can be preserved when the token is exchanged.
+     *
+     * @param user     the authenticated user
+     * @param clientId the client that was issued the original tokens
+     * @param scope    the scope granted in the original token issuance
      * @return signed JWT refresh token
      */
-    public String generateRefreshToken(User user) {
+    public String generateRefreshToken(User user, String clientId, String scope) {
         Instant now = Instant.now();
         Instant expiry = now.plusSeconds(properties.getRefreshTokenExpiry());
-        
+
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
             .issuer(properties.getIssuer())
             .subject(user.getSubject())
@@ -129,8 +132,10 @@ public class TokenService {
             .expirationTime(Date.from(expiry))
             .jwtID(UUID.randomUUID().toString())
             .claim("token_type", "refresh_token")
+            .claim("client_id", clientId)
+            .claim("scope", scope)
             .build();
-        
+
         return signToken(claims);
     }
     

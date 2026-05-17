@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Controller for the OIDC UserInfo endpoint.
@@ -26,6 +28,10 @@ import java.util.Optional;
  */
 @RestController
 public class UserinfoController {
+
+    // JWT registered claim names that must not be returned as identity claims
+    private static final Set<String> JWT_INTERNAL_CLAIMS = Set.of(
+            "iss", "aud", "iat", "exp", "nbf", "jti", "token_type", "scope", "auth_time");
 
     private final TokenService tokenService;
 
@@ -56,6 +62,10 @@ public class UserinfoController {
                     .build();
         }
 
-        return ResponseEntity.ok(claims.get().getClaims());
+        Map<String, Object> identityClaims = claims.get().getClaims().entrySet().stream()
+                .filter(e -> !JWT_INTERNAL_CLAIMS.contains(e.getKey()))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+        return ResponseEntity.ok(identityClaims);
     }
 }

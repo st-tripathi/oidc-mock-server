@@ -19,6 +19,7 @@ import java.util.Optional;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -49,13 +50,14 @@ class TokenControllerTest {
         given(properties.findClient("demo-client")).willReturn(Optional.of(client));
         given(tokenService.generateAccessToken(any(), anyString())).willReturn("access-token-123");
         given(tokenService.generateIdToken(any(), eq("demo-client"), any())).willReturn("id-token-123");
-        given(tokenService.generateRefreshToken(any())).willReturn("refresh-token-123");
+        given(tokenService.generateRefreshToken(any(), anyString(), anyString())).willReturn("refresh-token-123");
         given(properties.getAccessTokenExpiry()).willReturn(3600L);
 
         mockMvc.perform(post("/token")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .param("grant_type", "client_credentials")
-                .param("client_id", "demo-client"))
+                .param("client_id", "demo-client")
+                .param("client_secret", "demo-secret"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.access_token").value("access-token-123"))
                 .andExpect(jsonPath("$.token_type").value("Bearer"));
@@ -66,6 +68,7 @@ class TokenControllerTest {
         User user = new User("demo-user", "{noop}password", Map.of("sub", "user-demo"));
         given(userService.authenticate("demo-user", "password")).willReturn(Optional.of(user));
         given(tokenService.generateAccessToken(any(), anyString())).willReturn("access-token-pw");
+        given(tokenService.generateRefreshToken(any(), anyString(), anyString())).willReturn("refresh-token-pw");
         given(properties.getAccessTokenExpiry()).willReturn(3600L);
 
         mockMvc.perform(post("/token")
@@ -84,6 +87,7 @@ class TokenControllerTest {
                 List.of("http://localhost:8082/login/oauth2/code/oidc"));
         given(properties.findClient("demo-client")).willReturn(Optional.of(client));
         given(tokenService.generateAccessToken(any(), anyString())).willReturn("access-token-basic");
+        given(tokenService.generateRefreshToken(any(), anyString(), anyString())).willReturn("refresh-token-basic");
         given(properties.getAccessTokenExpiry()).willReturn(3600L);
 
         // Basic Auth for demo-client:demo-secret
@@ -95,5 +99,23 @@ class TokenControllerTest {
                 .param("grant_type", "client_credentials"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.access_token").value("access-token-basic"));
+    }
+
+    @Test
+    void testClientCredentialsGrant_RejectsWrongSecret() throws Exception {
+        OidcProperties.Client client = new OidcProperties.Client("demo-client", "correct-secret",
+                List.of("http://localhost:8082/login/oauth2/code/oidc"));
+        given(properties.findClient("demo-client")).willReturn(Optional.of(client));
+
+        // Basic Auth with wrong secret: demo-client:wrong-secret
+        String authHeader = "Basic " + java.util.Base64.getEncoder()
+                .encodeToString("demo-client:wrong-secret".getBytes());
+
+        mockMvc.perform(post("/token")
+                .header("Authorization", authHeader)
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .param("grant_type", "client_credentials"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("invalid_client"));
     }
 }

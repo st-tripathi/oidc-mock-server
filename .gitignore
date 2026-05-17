@@ -21,3 +21,6 @@ logs/
 # Maven
 .mvn/wrapper/maven-wrapper.jar
 
+# Custom user config (copy users.example.yaml → users.yaml to customize)
+users.yaml
+

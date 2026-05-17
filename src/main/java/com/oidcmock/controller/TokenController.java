@@ -76,20 +76,29 @@ public class TokenController {
             @RequestParam(value = "password", required = false) String password,
             @RequestParam(value = "refresh_token", required = false) String refreshToken,
             @RequestParam(value = "scope", required = false) String scope,
+            @RequestParam(value = "client_secret", required = false) String clientSecretParam,
+            @RequestParam(value = "code_verifier", required = false) String codeVerifier,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
 
         log.info("Token request: grant_type={}, clientId={}, code={}, redirectUri={}, authHeader={}",
                 grantType, clientId, code, redirectUri, authHeader != null ? "present" : "absent");
 
         String effectiveClientId = clientId;
+        String effectiveClientSecret = clientSecretParam;
 
-        // Support Basic Auth for client_id
-        if (effectiveClientId == null && authHeader != null && authHeader.startsWith("Basic ")) {
+        // Basic Auth takes precedence over request params for client authentication
+        if (authHeader != null && authHeader.startsWith("Basic ")) {
             try {
                 String base64Credentials = authHeader.substring(6);
                 String credentials = new String(Base64.getDecoder().decode(base64Credentials), StandardCharsets.UTF_8);
                 // credentials = "client_id:client_secret"
-                effectiveClientId = credentials.split(":", 2)[0];
+                String[] parts = credentials.split(":", 2);
+                if (effectiveClientId == null) {
+                    effectiveClientId = parts[0];
+                }
+                if (parts.length == 2) {
+                    effectiveClientSecret = parts[1];
+                }
                 log.debug("Extracted clientId from Basic Auth: {}", effectiveClientId);
             } catch (Exception e) {
                 log.error("Failed to decode Basic Auth header", e);
@@ -97,20 +106,20 @@ public class TokenController {
         }
 
         return switch (grantType) {
-            case "authorization_code" -> handleAuthorizationCode(code, redirectUri, effectiveClientId);
+            case "authorization_code" -> handleAuthorizationCode(code, redirectUri, effectiveClientId, codeVerifier);
             case "password" -> handlePasswordGrant(username, password, effectiveClientId, scope);
-            case "client_credentials" -> handleClientCredentials(effectiveClientId, scope);
+            case "client_credentials" -> handleClientCredentials(effectiveClientId, effectiveClientSecret, scope);
             case "refresh_token" -> handleRefreshToken(refreshToken);
             default -> errorResponse("unsupported_grant_type", "Grant type not supported: " + grantType);
         };
     }
 
-    private ResponseEntity<?> handleAuthorizationCode(String code, String redirectUri, String clientId) {
+    private ResponseEntity<?> handleAuthorizationCode(String code, String redirectUri, String clientId, String codeVerifier) {
         if (code == null || redirectUri == null || clientId == null) {
             return errorResponse("invalid_request", "Missing required parameters");
         }
 
-        Optional<AuthCodeData> codeData = authCodeService.exchangeCode(code, clientId, redirectUri);
+        Optional<AuthCodeData> codeData = authCodeService.exchangeCode(code, clientId, redirectUri, codeVerifier);
 
         if (codeData.isEmpty()) {
             return errorResponse("invalid_grant", "Invalid or expired authorization code");
@@ -144,7 +153,7 @@ public class TokenController {
         return issueTokens(user.get(), effectiveClientId, effectiveScope, null);
     }
 
-    private ResponseEntity<?> handleClientCredentials(String clientId, String scope) {
+    private ResponseEntity<?> handleClientCredentials(String clientId, String clientSecret, String scope) {
         if (clientId == null) {
             return errorResponse("invalid_client", "Client ID required");
         }
@@ -154,7 +163,15 @@ public class TokenController {
             return errorResponse("invalid_client", "Unknown client: " + clientId);
         }
 
-        // Issue token for the client itself
+        String expectedSecret = client.get().clientSecret();
+        if (expectedSecret != null && !expectedSecret.isEmpty()) {
+            if (clientSecret == null || !java.security.MessageDigest.isEqual(
+                    expectedSecret.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    clientSecret.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+                return errorResponse("invalid_client", "Invalid client credentials");
+            }
+        }
+
         User clientUser = new User(clientId, "", Map.of("sub", clientId, "roles", List.of("client")));
         String effectiveScope = scope != null ? scope : "openid";
 
@@ -172,20 +189,27 @@ public class TokenController {
             return errorResponse("invalid_grant", "Invalid or expired refresh token");
         }
 
-        String subject = claims.get().getSubject();
+        JWTClaimsSet tokenClaims = claims.get();
+        String subject = tokenClaims.getSubject();
         Optional<User> user = userService.findByUsername(subject);
 
         if (user.isEmpty()) {
             return errorResponse("invalid_grant", "User not found");
         }
 
-        return issueTokens(user.get(), "default-client", "openid profile email", null);
+        // Preserve the original client and scope from the refresh token claims
+        String originalClientId = (String) tokenClaims.getClaim("client_id");
+        String originalScope = (String) tokenClaims.getClaim("scope");
+        String effectiveClientId = originalClientId != null ? originalClientId : "default-client";
+        String effectiveScope = originalScope != null ? originalScope : "openid profile email";
+
+        return issueTokens(user.get(), effectiveClientId, effectiveScope, null);
     }
 
     private ResponseEntity<TokenResponse> issueTokens(User user, String clientId, String scope, String nonce) {
         String accessToken = tokenService.generateAccessToken(user, scope);
         String idToken = tokenService.generateIdToken(user, clientId, nonce);
-        String newRefreshToken = tokenService.generateRefreshToken(user);
+        String newRefreshToken = tokenService.generateRefreshToken(user, clientId, scope);
 
         TokenResponse response = TokenResponse.bearer(
                 accessToken,

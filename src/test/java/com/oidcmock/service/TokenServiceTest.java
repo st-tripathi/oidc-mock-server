@@ -46,4 +46,21 @@ class TokenServiceTest {
         assertEquals("http://test-issuer", claims.get().getIssuer());
         assertEquals("openid", claims.get().getClaim("scope"));
     }
+
+    @Test
+    void testRefreshTokenPreservesClientIdAndScope() throws Exception {
+        properties.setRefreshTokenExpiry(300);
+        User user = new User("testuser", "pass", Map.of("sub", "user-001"));
+
+        String refreshToken = tokenService.generateRefreshToken(user, "my-client", "openid profile");
+        assertNotNull(refreshToken);
+
+        Optional<JWTClaimsSet> claims = tokenService.validateToken(refreshToken);
+        assertTrue(claims.isPresent());
+
+        assertEquals("user-001", claims.get().getSubject());
+        assertEquals("my-client", claims.get().getClaim("client_id"));
+        assertEquals("openid profile", claims.get().getClaim("scope"));
+        assertEquals("refresh_token", claims.get().getClaim("token_type"));
+    }
 }

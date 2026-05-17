@@ -47,7 +47,7 @@
 
     <properties>
         <java.version>21</java.version>
-        <nimbus-jose-jwt.version>9.37.3</nimbus-jose-jwt.version>
+        <nimbus-jose-jwt.version>10.9</nimbus-jose-jwt.version>
     </properties>
     
     <dependencies>
